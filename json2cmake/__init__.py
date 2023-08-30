@@ -25,18 +25,8 @@ def freeze(obj):
     return obj
 
 
-def parsecommand(command, resolvepath):
-    if (isinstance(command, basestring)):
-        command = shlex.split(command)
-    words = iter(command)
-    next(words)  # remove the initial 'cc' / 'c++'
-
-    options = []
-    defines = []
-    includes = []
-    system_includes = set()
-    iquote_includes = set()
-
+def parseoptions(words, resolvepath, options, defines, includes,
+                 system_includes, iquote_includes):
     for word in words:
         if word == '-o':
             next(words)
@@ -58,6 +48,12 @@ def parsecommand(command, resolvepath):
             iquote_includes.add(include)
         elif word.startswith('-D'):
             defines.append(word[2:])
+        elif word.startswith('@'):
+            options_file = open(word[1:], 'r')
+            recursive_options = options_file.readlines()
+            options_file.close()
+            parseoptions(recursive_options, resolvepath, options, defines,
+                         includes, system_includes, iquote_includes)
         elif word == '-c':
             continue
         elif word in ['-arch', '-include', '-x']:
@@ -65,6 +61,23 @@ def parsecommand(command, resolvepath):
             options.append(next(words))
         elif word.startswith('-'):
             options.append(word)
+
+    return
+
+
+def parsecommand(command, resolvepath):
+    if (isinstance(command, basestring)):
+        command = shlex.split(command)
+    words = iter(command)
+    next(words)  # remove the initial 'cc' / 'c++'
+
+    options = []
+    defines = []
+    includes = []
+    system_includes = set()
+    iquote_includes = set()
+
+    parseoptions(words, resolvepath, options, defines, includes, system_includes, iquote_includes)
 
     return {
         'options': options,
@@ -118,9 +131,8 @@ class CompilationDatabase(object):
         disallowed_characters = re.compile("[^A-Za-z0-9_.+\-]")
 
         for (config, files) in self.targets.items():
-            files = list(files)
             config = {k: v for (k, v) in config}
-            name = os.path.basename(os.path.commonprefix(files).rstrip("/_"))
+            name = os.path.basename(os.path.commonprefix(list(files)).rstrip("/_"))
             name = re.sub(disallowed_characters, "", name)
             if name in used_names:
                 index = 2
